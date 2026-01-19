@@ -1,0 +1,716 @@
+<?php
+session_start();
+$dataFile = 'matese_data.json';
+
+// --- BAGIAN 1: BACKEND PHP ---
+
+// 1. Inisialisasi Database JSON jika belum ada
+if (!file_exists($dataFile)) {
+    $defaultData = [
+        'publications' => [
+            ['id' => 1, 'title' => "Analisis Kualitas Air Sungai Brantas", 'author' => "Dr. Budi Santoso", 'year' => 2023, 'type' => "Jurnal", 'abstract' => "Studi parameter fisika kimia air."],
+            ['id' => 2, 'title' => "Sistem Monitoring Suhu IoT", 'author' => "Siti Aminah", 'year' => 2024, 'type' => "Prosiding", 'abstract' => "Implementasi ESP32 untuk lab."]
+        ],
+        'gallery' => [
+            ['id' => 1, 'title' => "Penelitian Lab", 'url' => "https://images.unsplash.com/photo-1581093458791-9f3c3900df4b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"],
+            ['id' => 2, 'title' => "Diskusi Tim", 'url' => "https://images.unsplash.com/photo-1517048676732-d65bc937f952?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"],
+            ['id' => 3, 'title' => "Seminar Nasional", 'url' => "https://images.unsplash.com/photo-1523240795612-9a054b0db644?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80"]
+        ]
+    ];
+    file_put_contents($dataFile, json_encode($defaultData, JSON_PRETTY_PRINT));
+}
+
+// 2. Routing API Sederhana
+if (isset($_GET['action'])) {
+    header('Content-Type: application/json');
+    $currentData = json_decode(file_get_contents($dataFile), true);
+
+    // API: Ambil Data
+    if ($_GET['action'] === 'get_data') {
+        // Cek status login untuk UI
+        $response = $currentData;
+        $response['is_logged_in'] = isset($_SESSION['admin_logged_in']);
+        echo json_encode($response);
+        exit;
+    }
+
+    // API: Login
+    if ($_GET['action'] === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        // CREDENTIALS HARDCODED (Bisa diubah)
+        if ($input['username'] === 'admin' && $input['password'] === 'admin123') {
+            $_SESSION['admin_logged_in'] = true;
+            echo json_encode(['status' => 'success']);
+        } else {
+            http_response_code(401);
+            echo json_encode(['status' => 'error', 'message' => 'Username atau Password salah']);
+        }
+        exit;
+    }
+
+    // API: Logout
+    if ($_GET['action'] === 'logout') {
+        session_destroy();
+        echo json_encode(['status' => 'success']);
+        exit;
+    }
+
+    // API: Simpan Data (Hanya jika login)
+    if ($_GET['action'] === 'save_data' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        if (!isset($_SESSION['admin_logged_in'])) {
+            http_response_code(403);
+            echo json_encode(['status' => 'error', 'message' => 'Unauthorized']);
+            exit;
+        }
+
+        $input = json_decode(file_get_contents('php://input'), true);
+        if ($input) {
+            // Update file JSON
+            $newData = [
+                'publications' => $input['publications'] ?? $currentData['publications'],
+                'gallery' => $input['gallery'] ?? $currentData['gallery']
+            ];
+            file_put_contents($dataFile, json_encode($newData, JSON_PRETTY_PRINT));
+            echo json_encode(['status' => 'success']);
+        }
+        exit;
+    }
+    exit;
+}
+?>
+
+<!DOCTYPE html>
+<html lang="id" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MATESE - Material Technology and Separation Laboratory</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] },
+                    colors: {
+                        lab: {
+                            50: '#f0f9ff', 100: '#e0f2fe', 500: '#0ea5e9', 600: '#0284c7', 800: '#075985', 900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans antialiased flex flex-col min-h-screen">
+
+    <nav class="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center gap-3 cursor-pointer" onclick="switchView('public'); window.scrollTo(0,0)">
+                    <div class="w-10 h-10 bg-lab-600 rounded-lg shadow-lg flex items-center justify-center text-white font-bold text-lg">M</div>
+                    <div>
+                        <h1 class="text-xl font-bold text-gray-900 leading-none">MATESE<span class="text-lab-600">.Lab</span></h1>
+                        <p class="text-[10px] text-gray-500 font-medium uppercase tracking-wider">UPN "Veteran" Yogyakarta</p>
+                    </div>
+                </div>
+                <div class="hidden md:flex items-center space-x-6">
+                    <button onclick="scrollToSection('profile-section')" class="text-sm font-medium text-gray-600 hover:text-lab-600 transition">Profil</button>
+                    <button onclick="scrollToSection('gallery-section')" class="text-sm font-medium text-gray-600 hover:text-lab-600 transition">Galeri</button>
+                    <button onclick="scrollToSection('publication-section')" class="text-sm font-medium text-gray-600 hover:text-lab-600 transition">Publikasi</button>
+                    <div class="h-4 w-px bg-gray-300"></div>
+                    
+                    <button id="nav-auth-btn" onclick="checkAuthAction()" class="px-4 py-2 text-sm font-medium bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition group">
+                        <i class="fa-solid fa-lock mr-2 text-gray-400 group-hover:text-gray-600"></i><span id="auth-btn-text">Login Admin</span>
+                    </button>
+                </div>
+
+                <div class="md:hidden flex items-center">
+                    <button onclick="toggleMobileMenu()" class="text-gray-600 hover:text-lab-600">
+                        <i class="fa-solid fa-bars text-xl"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="mobile-menu" class="hidden md:hidden bg-white border-t border-gray-100 absolute w-full shadow-lg">
+            <div class="px-4 pt-2 pb-4 space-y-2">
+                <button onclick="scrollToSection('profile-section'); toggleMobileMenu()" class="block w-full text-left px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-md">Profil</button>
+                <button onclick="scrollToSection('gallery-section'); toggleMobileMenu()" class="block w-full text-left px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-md">Galeri</button>
+                <button onclick="scrollToSection('publication-section'); toggleMobileMenu()" class="block w-full text-left px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-md">Publikasi</button>
+                <button onclick="checkAuthAction(); toggleMobileMenu()" class="block w-full text-left px-3 py-2 text-base font-medium text-gray-600 bg-gray-50 rounded-md" id="mobile-auth-text">Login Admin</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow">
+        
+        <div id="public-view" class="space-y-16 pb-16">
+            
+            <div class="relative bg-gradient-to-br from-lab-900 via-lab-800 to-lab-600 text-white overflow-hidden">
+                <div class="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-32 relative z-10 flex flex-col md:flex-row items-center gap-12">
+                    <div class="w-full md:w-1/2 text-center md:text-left">
+                        <span class="inline-block py-1 px-3 rounded-full bg-white/20 backdrop-blur-sm text-sm font-semibold mb-6 border border-white/30 animate-pulse">
+                            ✨ Material Technology and Separation
+                        </span>
+                        <h1 class="text-4xl md:text-6xl font-bold mb-6 leading-tight">Inovasi Riset & <br/>Teknologi Material</h1>
+                        <p class="text-lab-100 text-lg md:text-xl mb-8 leading-relaxed max-w-lg mx-auto md:mx-0">
+                            Wadah pengembangan diri, pengetahuan, dan keterampilan bagi mahasiswa UPN "Veteran" Yogyakarta.
+                        </p>
+                        <div class="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
+                            <button onclick="scrollToSection('publication-section')" class="px-8 py-3 bg-white text-lab-800 rounded-full font-bold shadow-lg hover:shadow-xl hover:bg-gray-100 transition transform hover:-translate-y-1">Lihat Riset</button>
+                            <button onclick="scrollToSection('profile-section')" class="px-8 py-3 bg-transparent border border-white/30 text-white rounded-full font-semibold hover:bg-white/10 transition">Pelajari Profil</button>
+                        </div>
+                    </div>
+                    <div class="w-full md:w-1/2 flex justify-center md:justify-end">
+                         <div class="relative w-full max-w-md aspect-square rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 p-4 shadow-2xl transform rotate-3 hover:rotate-0 transition duration-500">
+                            <div class="w-full h-full bg-white/50 rounded-xl flex items-center justify-center text-lab-800 font-bold">MATESE LOGO</div>
+                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <section id="profile-section" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10">
+                <div class="grid md:grid-cols-2 gap-16 items-center">
+                    <div>
+                        <h2 class="text-lab-600 font-bold tracking-wide uppercase text-sm mb-2">Tentang Kami</h2>
+                        <h3 class="text-3xl md:text-4xl font-bold text-gray-900 mb-6">Membangun Insan Unggul & Berdampak</h3>
+                        <p class="text-gray-600 text-lg leading-relaxed mb-6 text-justify">
+                            MATESE (Material Technology and Separation) merupakan organisasi mahasiswa yang berperan sebagai wadah pengembangan diri, pengetahuan, dan keterampilan. 
+                        </p>
+                        <div class="space-y-4">
+                            <div class="bg-white border border-gray-100 rounded-xl p-5 shadow-sm hover:shadow-md transition">
+                                <h4 class="font-bold text-lab-800 flex items-center gap-2 mb-2"><i class="fa-solid fa-eye text-lab-500"></i> Visi Kami</h4>
+                                <p class="text-gray-600 text-sm">Melahirkan mahasiswa berakhlak, unggul, profesional, dan mandiri yang berdampak bagi seluruh insan.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-white p-6 rounded-2xl shadow-lg border-t-4 border-lab-500 transform translate-y-8 text-center">
+                            <i class="fa-solid fa-bullhorn text-3xl text-lab-500 mb-4"></i>
+                            <h4 class="font-bold text-gray-900">Publikasi</h4>
+                        </div>
+                        <div class="bg-white p-6 rounded-2xl shadow-lg border-t-4 border-purple-500 text-center">
+                            <i class="fa-solid fa-graduation-cap text-3xl text-purple-500 mb-4"></i>
+                            <h4 class="font-bold text-gray-900">Akademik</h4>
+                        </div>
+                        <div class="bg-white p-6 rounded-2xl shadow-lg border-t-4 border-amber-500 transform translate-y-8 text-center">
+                            <i class="fa-solid fa-trophy text-3xl text-amber-500 mb-4"></i>
+                            <h4 class="font-bold text-gray-900">Kompetisi</h4>
+                        </div>
+                        <div class="bg-white p-6 rounded-2xl shadow-lg border-t-4 border-green-500 text-center">
+                            <i class="fa-solid fa-laptop-code text-3xl text-green-500 mb-4"></i>
+                            <h4 class="font-bold text-gray-900">IT & Stream</h4>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="gallery-section" class="bg-gray-100 py-16">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="text-center mb-12">
+                        <h2 class="text-3xl font-bold text-gray-900">Galeri Kegiatan</h2>
+                        <p class="text-gray-500 mt-2">Dokumentasi aktivitas riset, seminar, dan kebersamaan tim MATESE.</p>
+                    </div>
+                    <div id="gallery-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        </div>
+                </div>
+            </section>
+
+            <section id="publication-section" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex flex-col md:flex-row justify-between items-end mb-8 gap-4">
+                    <div>
+                        <h3 class="text-2xl font-bold text-gray-900">Publikasi Terbaru</h3>
+                        <p class="text-gray-500">Daftar penelitian yang telah dipublikasikan.</p>
+                    </div>
+                    <div class="relative w-full md:w-auto">
+                        <i class="fa-solid fa-search absolute left-3 top-3 text-gray-400"></i>
+                        <input type="text" id="public-search" placeholder="Cari judul..." class="pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-lab-500 outline-none w-full md:w-64 transition shadow-sm" onkeyup="renderPublicPublications()">
+                    </div>
+                </div>
+                <div id="public-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    </div>
+            </section>
+
+            <section id="submission-section" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16 pt-16">
+                <div class="bg-gradient-to-r from-lab-900 to-lab-700 rounded-3xl p-8 md:p-12 text-white shadow-2xl text-center">
+                    <h2 class="text-3xl font-bold mb-4">Ingin Publikasi di Sini?</h2>
+                    <p class="text-lab-100 mb-6">Hubungi admin atau submit naskah Anda melalui email resmi kami.</p>
+                    <a href="mailto:matese.lab@upnyk.ac.id" class="px-6 py-3 bg-white text-lab-800 font-bold rounded-lg shadow-lg hover:bg-gray-100 transition">
+                        <i class="fa-regular fa-envelope mr-2"></i> Kirim Email
+                    </a>
+                </div>
+            </section>
+
+        </div>
+
+        <div id="admin-view" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div class="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-900">Admin Panel</h2>
+                    <p class="text-gray-500 text-sm">Kelola konten website: Jurnal & Galeri Foto.</p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="flex bg-gray-100 p-1 rounded-lg">
+                        <button onclick="switchAdminTab('publications')" id="tab-btn-pub" class="px-6 py-2 rounded-md text-sm font-bold shadow-sm bg-white text-lab-700 transition"><i class="fa-solid fa-book mr-2"></i> Publikasi</button>
+                        <button onclick="switchAdminTab('gallery')" id="tab-btn-gal" class="px-6 py-2 rounded-md text-sm font-bold text-gray-500 hover:text-gray-700 transition"><i class="fa-solid fa-images mr-2"></i> Galeri Foto</button>
+                    </div>
+                    <button onclick="logout()" class="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 transition">
+                        <i class="fa-solid fa-sign-out-alt mr-2"></i>Logout
+                    </button>
+                </div>
+            </div>
+
+            <div id="admin-publications" class="flex flex-col md:flex-row gap-8">
+                <div class="w-full md:w-1/3 lg:w-1/4">
+                    <div class="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 sticky top-24">
+                        <div class="flex items-center justify-between mb-6">
+                            <h3 class="text-lg font-bold text-gray-900" id="form-title">Tambah Publikasi</h3>
+                            <button onclick="resetPubForm()" class="text-xs text-gray-500 hover:text-lab-600 underline">Reset</button>
+                        </div>
+                        <form id="publication-form" onsubmit="handlePubSubmit(event)" class="space-y-4">
+                            <input type="hidden" id="pub-id">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">Judul Penelitian</label>
+                                <input type="text" id="pub-title" required class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-lab-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">Penulis</label>
+                                <input type="text" id="pub-author" required class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-lab-500 outline-none">
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-1">Tahun</label>
+                                    <input type="number" id="pub-year" required class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-lab-500 outline-none">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-1">Tipe</label>
+                                    <select id="pub-type" class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-lab-500 bg-white">
+                                        <option value="Jurnal">Jurnal</option>
+                                        <option value="Prosiding">Prosiding</option>
+                                        <option value="Skripsi">Skripsi</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">Abstrak Singkat</label>
+                                <textarea id="pub-abstract" rows="3" class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-lab-500 outline-none"></textarea>
+                            </div>
+                            <button type="submit" id="btn-submit-pub" class="w-full py-2.5 bg-lab-600 hover:bg-lab-700 text-white rounded-lg font-bold shadow-md transition">
+                                <i class="fa-solid fa-save mr-2"></i> Simpan
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                <div class="w-full md:w-2/3 lg:w-3/4">
+                    <div class="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead class="bg-gray-50 border-b border-gray-200 text-xs uppercase text-gray-500 font-semibold">
+                                    <tr>
+                                        <th class="p-4">Judul & Abstrak</th>
+                                        <th class="p-4 w-32">Penulis</th>
+                                        <th class="p-4 w-24 text-center">Tipe</th>
+                                        <th class="p-4 w-24 text-center">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-table-pub" class="text-sm divide-y divide-gray-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="admin-gallery" class="hidden flex flex-col md:flex-row gap-8">
+                <div class="w-full md:w-1/3 lg:w-1/4">
+                    <div class="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 sticky top-24">
+                        <div class="mb-6">
+                            <h3 class="text-lg font-bold text-gray-900">Tambah Foto</h3>
+                            <p class="text-xs text-gray-500">Gunakan link gambar (URL) dari internet.</p>
+                        </div>
+                        <form id="gallery-form" onsubmit="handleGallerySubmit(event)" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">Judul/Keterangan Foto</label>
+                                <input type="text" id="gal-title" required class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-lab-500 outline-none" placeholder="Kegiatan Lab...">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">Link URL Gambar</label>
+                                <input type="url" id="gal-url" required class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-lab-500 outline-none" placeholder="https://...">
+                            </div>
+                            <button type="submit" class="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold shadow-md transition">
+                                <i class="fa-solid fa-plus mr-2"></i> Tambah Foto
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                <div class="w-full md:w-2/3 lg:w-3/4">
+                    <div class="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+                        <h3 class="font-bold mb-4">Daftar Foto Galeri</h3>
+                        <div id="admin-gallery-grid" class="grid grid-cols-2 md:grid-cols-3 gap-4"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-gray-900 text-white pt-16 pb-8">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-sm text-gray-500">
+            &copy; 2025 MATESE Laboratory. All rights reserved.
+        </div>
+    </footer>
+
+    <div id="login-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md mx-4">
+            <div class="text-center mb-6">
+                <div class="w-16 h-16 bg-lab-600 rounded-full flex items-center justify-center text-white mx-auto mb-4">
+                    <i class="fa-solid fa-lock text-2xl"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-900">Admin Login</h2>
+                <p class="text-gray-500 text-sm">Masukkan kredensial untuk mengakses panel admin</p>
+            </div>
+            <form id="login-form" onsubmit="handleLogin(event)" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Username</label>
+                    <input type="text" id="login-username" required class="w-full px-4 py-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-lab-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Password</label>
+                    <input type="password" id="login-password" required class="w-full px-4 py-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-lab-500 outline-none">
+                </div>
+                <button type="submit" class="w-full py-3 bg-lab-600 hover:bg-lab-700 text-white rounded-lg font-bold shadow-md transition">
+                    <i class="fa-solid fa-sign-in-alt mr-2"></i> Login
+                </button>
+            </form>
+            <button onclick="closeLoginModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+                <i class="fa-solid fa-times text-xl"></i>
+            </button>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed bottom-5 right-5 transform translate-y-20 opacity-0 transition-all duration-300 z-50">
+        <div class="bg-gray-900 text-white px-6 py-3 rounded-lg shadow-2xl flex items-center gap-3">
+            <i class="fa-solid fa-circle-check text-green-400"></i>
+            <span id="toast-message">Berhasil</span>
+        </div>
+    </div>
+
+    <script>
+        let publications = [];
+        let galleryItems = [];
+        let isLoggedIn = false;
+
+        // --- INIT: LOAD DATA DARI PHP ---
+        async function init() {
+            try {
+                const response = await fetch('?action=get_data');
+                const data = await response.json();
+                
+                publications = data.publications || [];
+                galleryItems = data.gallery || [];
+                isLoggedIn = data.is_logged_in || false;
+
+                updateUIForAuth();
+                renderPublicPublications();
+                renderGallery();
+                renderAdminPubTable();
+                renderAdminGalleryGrid();
+            } catch (error) {
+                console.error("Gagal memuat data:", error);
+                showToast("Gagal koneksi database");
+            }
+        }
+
+        // --- AUTH LOGIC ---
+        function checkAuthAction() {
+            if (isLoggedIn) {
+                switchView('admin');
+            } else {
+                showLoginModal();
+            }
+        }
+
+        function updateUIForAuth() {
+            const btnText = document.getElementById('auth-btn-text');
+            const mobText = document.getElementById('mobile-auth-text');
+            
+            if (isLoggedIn) {
+                btnText.textContent = "Admin Panel";
+                mobText.textContent = "Admin Panel";
+            } else {
+                btnText.textContent = "Login Admin";
+                mobText.textContent = "Login Admin";
+            }
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const u = document.getElementById('login-username').value;
+            const p = document.getElementById('login-password').value;
+
+            try {
+                const res = await fetch('?action=login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: u, password: p})
+                });
+                const result = await res.json();
+
+                if (result.status === 'success') {
+                    isLoggedIn = true;
+                    closeLoginModal();
+                    updateUIForAuth();
+                    switchView('admin');
+                    showToast("Login Berhasil!");
+                } else {
+                    showToast(result.message || "Login Gagal!");
+                }
+            } catch (err) {
+                showToast("Error koneksi");
+            }
+        }
+
+        async function logout() {
+            await fetch('?action=logout');
+            isLoggedIn = false;
+            updateUIForAuth();
+            switchView('public');
+            showToast("Berhasil Logout");
+        }
+
+        // --- DATA SAVING (TO PHP) ---
+        async function saveData() {
+            try {
+                const res = await fetch('?action=save_data', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        publications: publications,
+                        gallery: galleryItems
+                    })
+                });
+                const result = await res.json();
+                if(result.status !== 'success') {
+                    throw new Error(result.message);
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("Gagal menyimpan data ke server!");
+            }
+        }
+
+        // --- VIEW NAVIGATION (Sama seperti sebelumnya) ---
+        function switchView(viewName) {
+            document.getElementById('public-view').classList.toggle('hidden', viewName === 'admin');
+            document.getElementById('admin-view').classList.toggle('hidden', viewName !== 'admin');
+            window.scrollTo(0,0);
+        }
+
+        function switchAdminTab(tabName) {
+            const pubTab = document.getElementById('admin-publications');
+            const galTab = document.getElementById('admin-gallery');
+            const btnPub = document.getElementById('tab-btn-pub');
+            const btnGal = document.getElementById('tab-btn-gal');
+
+            if(tabName === 'publications') {
+                pubTab.classList.remove('hidden'); galTab.classList.add('hidden');
+                btnPub.classList.add('bg-white', 'text-lab-700', 'shadow-sm'); btnPub.classList.remove('text-gray-500');
+                btnGal.classList.remove('bg-white', 'text-lab-700', 'shadow-sm'); btnGal.classList.add('text-gray-500');
+            } else {
+                pubTab.classList.add('hidden'); galTab.classList.remove('hidden');
+                btnGal.classList.add('bg-white', 'text-lab-700', 'shadow-sm'); btnGal.classList.remove('text-gray-500');
+                btnPub.classList.remove('bg-white', 'text-lab-700', 'shadow-sm'); btnPub.classList.add('text-gray-500');
+            }
+        }
+
+        function scrollToSection(id) {
+            switchView('public');
+            setTimeout(() => {
+                const el = document.getElementById(id);
+                if(el) window.scrollTo({ top: el.offsetTop - 80, behavior: 'smooth' });
+            }, 50);
+        }
+
+        function toggleMobileMenu() {
+            document.getElementById('mobile-menu').classList.toggle('hidden');
+        }
+
+        // --- PUBLICATION FUNCTIONS ---
+        function renderPublicPublications() {
+            const container = document.getElementById('public-list');
+            const search = document.getElementById('public-search').value.toLowerCase();
+            container.innerHTML = '';
+            
+            const filtered = publications.filter(p => p.title.toLowerCase().includes(search));
+            filtered.forEach(pub => {
+                container.innerHTML += `
+                    <div class="bg-white rounded-xl shadow-sm hover:shadow-lg border border-gray-100 p-6 transition flex flex-col h-full">
+                        <div class="flex justify-between mb-4">
+                            <span class="px-3 py-1 bg-lab-50 text-lab-700 text-xs font-bold rounded-full border border-lab-100 uppercase">${pub.type}</span>
+                            <span class="text-gray-400 text-sm"><i class="fa-regular fa-calendar mr-1"></i> ${pub.year}</span>
+                        </div>
+                        <h3 class="text-lg font-bold text-gray-900 mb-2">${pub.title}</h3>
+                        <p class="text-gray-500 text-sm mb-4 line-clamp-3 flex-grow">${pub.abstract}</p>
+                        <div class="pt-4 border-t border-gray-50 text-sm text-gray-700 font-medium">
+                            <i class="fa-solid fa-user-pen mr-2 text-lab-500"></i> ${pub.author}
+                        </div>
+                    </div>`;
+            });
+        }
+
+        function renderAdminPubTable() {
+            const tbody = document.getElementById('admin-table-pub');
+            tbody.innerHTML = '';
+            publications.forEach(pub => {
+                tbody.innerHTML += `
+                    <tr class="hover:bg-gray-50 border-b border-gray-100">
+                        <td class="p-4"><div class="font-bold text-gray-900">${pub.title}</div></td>
+                        <td class="p-4 text-gray-600">${pub.author}</td>
+                        <td class="p-4 text-center"><span class="text-xs font-bold bg-gray-100 px-2 py-1 rounded">${pub.type}</span></td>
+                        <td class="p-4 text-center">
+                            <button onclick="editPub(${pub.id})" class="text-amber-500 hover:text-amber-700 mx-1"><i class="fa-solid fa-pen"></i></button>
+                            <button onclick="deletePub(${pub.id})" class="text-red-500 hover:text-red-700 mx-1"><i class="fa-solid fa-trash"></i></button>
+                        </td>
+                    </tr>`;
+            });
+        }
+
+        async function handlePubSubmit(e) {
+            e.preventDefault();
+            const id = document.getElementById('pub-id').value;
+            const data = {
+                title: document.getElementById('pub-title').value,
+                author: document.getElementById('pub-author').value,
+                year: document.getElementById('pub-year').value,
+                type: document.getElementById('pub-type').value,
+                abstract: document.getElementById('pub-abstract').value
+            };
+
+            if (id) {
+                const idx = publications.findIndex(p => p.id == id);
+                publications[idx] = { id: parseInt(id), ...data };
+                showToast("Data diperbarui!");
+            } else {
+                const newId = publications.length > 0 ? Math.max(...publications.map(p => p.id)) + 1 : 1;
+                publications.push({ id: newId, ...data });
+                showToast("Jurnal ditambahkan!");
+            }
+            
+            await saveData(); // Simpan ke server
+            resetPubForm();
+            renderAdminPubTable();
+            renderPublicPublications();
+        }
+
+        function editPub(id) {
+            const pub = publications.find(p => p.id == id);
+            document.getElementById('pub-id').value = pub.id;
+            document.getElementById('pub-title').value = pub.title;
+            document.getElementById('pub-author').value = pub.author;
+            document.getElementById('pub-year').value = pub.year;
+            document.getElementById('pub-type').value = pub.type;
+            document.getElementById('pub-abstract').value = pub.abstract;
+            document.getElementById('form-title').innerText = "Edit Publikasi";
+            document.getElementById('btn-submit-pub').innerText = "Update Data";
+        }
+
+        async function deletePub(id) {
+            if(confirm('Hapus jurnal ini?')) {
+                publications = publications.filter(p => p.id !== id);
+                await saveData(); // Simpan ke server
+                renderAdminPubTable();
+                renderPublicPublications();
+                showToast("Data dihapus!");
+            }
+        }
+
+        function resetPubForm() {
+            document.getElementById('publication-form').reset();
+            document.getElementById('pub-id').value = '';
+            document.getElementById('form-title').innerText = "Tambah Publikasi";
+            document.getElementById('btn-submit-pub').innerText = "Simpan";
+        }
+
+        // --- GALLERY FUNCTIONS ---
+        function renderGallery() {
+            const container = document.getElementById('gallery-list');
+            container.innerHTML = '';
+            galleryItems.forEach(item => {
+                container.innerHTML += `
+                    <div class="relative group overflow-hidden rounded-xl shadow-md cursor-pointer h-64">
+                        <img src="${item.url}" alt="${item.title}" class="w-full h-full object-cover transition duration-500 group-hover:scale-110">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition duration-300 flex items-end p-6">
+                            <p class="text-white font-medium text-lg">${item.title}</p>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        function renderAdminGalleryGrid() {
+            const container = document.getElementById('admin-gallery-grid');
+            container.innerHTML = '';
+            galleryItems.forEach(item => {
+                container.innerHTML += `
+                    <div class="relative rounded-lg overflow-hidden h-32 group border border-gray-200">
+                        <img src="${item.url}" class="w-full h-full object-cover">
+                        <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
+                            <button onclick="deleteGalleryItem(${item.id})" class="text-white bg-red-600 p-2 rounded-full hover:bg-red-700 text-xs">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                        <div class="absolute bottom-0 w-full bg-black/70 text-white text-[10px] p-1 truncate text-center">${item.title}</div>
+                    </div>`;
+            });
+        }
+
+        async function handleGallerySubmit(e) {
+            e.preventDefault();
+            const title = document.getElementById('gal-title').value;
+            const url = document.getElementById('gal-url').value;
+            const newId = galleryItems.length > 0 ? Math.max(...galleryItems.map(p => p.id)) + 1 : 1;
+            
+            galleryItems.push({ id: newId, title: title, url: url });
+            await saveData(); // Simpan ke server
+            
+            document.getElementById('gallery-form').reset();
+            renderGallery();
+            renderAdminGalleryGrid();
+            showToast("Foto berhasil ditambahkan!");
+        }
+
+        async function deleteGalleryItem(id) {
+            if(confirm('Hapus foto ini dari galeri?')) {
+                galleryItems = galleryItems.filter(p => p.id !== id);
+                await saveData(); // Simpan ke server
+                renderGallery();
+                renderAdminGalleryGrid();
+                showToast("Foto dihapus!");
+            }
+        }
+
+        // --- UTILS ---
+        function showLoginModal() {
+            document.getElementById('login-modal').classList.remove('hidden');
+            document.getElementById('login-username').focus();
+        }
+
+        function closeLoginModal() {
+            document.getElementById('login-modal').classList.add('hidden');
+            document.getElementById('login-form').reset();
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-message').innerText = msg;
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 3000);
+        }
+
+        // Start App
+        init();
+        switchView('public');
+    </script>
+</body>
+</html>
